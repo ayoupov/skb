@@ -1,35 +1,58 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Simple Map</title>
+    <title>Tule Ultima Decay Map</title>
     <meta name="viewport" content="initial-scale=1.0">
     <meta charset="utf-8">
-    <style>
-            /* Always set the map height explicitly to define the size of the div
-      * element that contains the map. */
-        #map {
-            height: 100%;
-        }
-
-            /* Optional: Makes the sample page fill the window. */
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-        }
-    </style>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.0/jquery.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.0.3/dist/leaflet.css"
+          integrity="sha512-07I2e+7D8p6he1SIM+1twR5TIrhUQn9+I6yjqD53JQjFiMf8EtC93ty0/5vJTZGF8aAocvHYNEDJajGdNx1IsQ=="
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.0.3/dist/leaflet-src.js"
+            integrity="sha512-WXoSHqw/t26DszhdMhOXOkI7qCiv5QWXhH9R7CgvgZMHz1ImlkVQ3uNsiQKu5wwbbxtPzFXd1hK4tzno2VqhpA=="
+            crossorigin=""></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/screen.css"/>
+
+    <link rel="stylesheet" href="css/MarkerCluster.css"/>
+    <link rel="stylesheet" href="css/MarkerCluster.Default.css"/>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster-src.js"></script>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=20620b26-bdb5-49b4-9297-def06766995e&lang=ru_RU"
+            type="text/javascript"></script>
 </head>
 <body>
 <div id="map"></div>
+<button id="btn">Show cluster area</button>
+<div id="lbl">Tula's residential houses in dangerous state</div>
 <script>
-    var map;
-
-    var markers = [];
+    var map, $button = $("#btn"),
+            markers = [],
+            polygons = [];
 
     function addMarkers(data) {
-        console.log(data)
+        console.log(data);
+        var dataset = JSON.parse(data).data;
+        $(dataset).each(function (a, e) {
+            var addr = e.adres;
+            var geocoded = ymaps.geocode(addr, {results:1})
+                    .then(function (res) {
+                        var gc = res.geoObjects.get(0),
+                                coords = gc.geometry.getCoordinates(),
+                                bounds = gc.properties.get('boundedBy'); // don't use for now
+                        var marker = L.marker(L.latLng(coords[0], coords[1]), { title:addr });
+                        marker.bindPopup(addr);
+                        markers.addLayer(marker);
+                    }
+            );
+
+        });
+        map.addLayer(markers);
     }
+
+    $button.on('click', function () {
+        drawAllConvexHulls();
+        $button.attr("disabled", "disabled");
+    });
 
     function loadData() {
         $.get(
@@ -37,11 +60,46 @@
                 addMarkers)
     }
 
-
-    function initMap() {
-        loadData();
-        addMarkers();
+    function addConvexHull(layer) {
+        var ch = new L.polygon(layer.getConvexHull());
+        map.addLayer(ch);
+        polygons.push(ch);
     }
+
+    function drawAllConvexHulls() {
+        var ls = markers._featureGroup._layers;
+        var normalizedLayers = Object.values(ls);
+
+        $(normalizedLayers).each(function (i, item) {
+            if ($(this._icon).hasClass("marker-cluster"))
+                addConvexHull(item);
+        });
+    }
+
+    ymaps.ready(function () {
+        var tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom:18,
+                    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Points &copy 2012 LINZ'
+                }),
+                latlng = L.latLng(54.181173, 37.617240);
+        map = L.map('map', {center:latlng, zoom:12, layers:[tiles]});
+
+        map.on('zoomend', function () {
+            if (polygons.length) {
+                $(polygons).each(function () {
+                    map.removeLayer(this);
+                });
+                polygons = [];
+            }
+//            drawAllConvexHulls();
+            $button.removeAttr("disabled");
+        });
+
+        markers = L.markerClusterGroup({ chunkedLoading:true, showCoverageOnHover:false });
+        loadData();
+    });
+
+
 </script>
 </body>
 </html>
